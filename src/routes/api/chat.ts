@@ -23,32 +23,55 @@ export const Route = createFileRoute("/api/chat")({
       POST: async ({ request }) => {
         const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
         if (!token) return Response.json({ error: "Войдите в аккаунт" }, { status: 401 });
-        const sb = createClient<Database>(process.env['SUPABASE_URL']!, process.env['SUPABASE_PUBLISHABLE_KEY']!, {
-          global: { headers: { Authorization: `Bearer ${token}` } },
-          auth: { persistSession: false, autoRefreshToken: false, storage: undefined },
-        });
+        const sb = createClient<Database>(
+          process.env["SUPABASE_URL"]!,
+          process.env["SUPABASE_PUBLISHABLE_KEY"]!,
+          {
+            global: { headers: { Authorization: `Bearer ${token}` } },
+            auth: { persistSession: false, autoRefreshToken: false, storage: undefined },
+          },
+        );
         const { data: u } = await sb.auth.getUser(token);
         if (!u.user) return Response.json({ error: "Сессия истекла" }, { status: 401 });
         const body = (await request.json()) as { threadId?: string; messages?: UIMessage[] };
         const threadId = body.threadId;
         const messages = Array.isArray(body.messages) ? body.messages.slice(-60) : [];
-        if (!threadId || !messages.length) return Response.json({ error: "Неверный запрос" }, { status: 400 });
-        const { data: thread } = await sb.from("threads").select("id,title").eq("id", threadId).maybeSingle();
+        if (!threadId || !messages.length)
+          return Response.json({ error: "Неверный запрос" }, { status: 400 });
+        const { data: thread } = await sb
+          .from("threads")
+          .select("id,title")
+          .eq("id", threadId)
+          .maybeSingle();
         if (!thread) return Response.json({ error: "Диалог не найден" }, { status: 404 });
-        const { data: prof } = await sb.from("workspace_records").select("data").eq("kind", "bot_profile").limit(1).maybeSingle();
+        const { data: prof } = await sb
+          .from("workspace_records")
+          .select("data")
+          .eq("kind", "bot_profile")
+          .limit(1)
+          .maybeSingle();
         const last = messages[messages.length - 1]!;
         if (last.role === "user") {
           const { error } = await sb.from("chat_messages").upsert(
-            { thread_id: threadId, user_id: u.user.id, message_id: last.id, message: last as unknown as Json },
+            {
+              thread_id: threadId,
+              user_id: u.user.id,
+              message_id: last.id,
+              message: last as unknown as Json,
+            },
             { onConflict: "thread_id,message_id" },
           );
-          if (error) return Response.json({ error: "Не удалось сохранить сообщение" }, { status: 500 });
+          if (error)
+            return Response.json({ error: "Не удалось сохранить сообщение" }, { status: 500 });
           if (thread.title === "Новый диалог" || !thread.title) {
-            const text = last.parts.map((p) => (p.type === "text" ? p.text : "")).join(" ").slice(0, 60);
+            const text = last.parts
+              .map((p) => (p.type === "text" ? p.text : ""))
+              .join(" ")
+              .slice(0, 60);
             if (text) await sb.from("threads").update({ title: text }).eq("id", threadId);
           }
         }
-        const apiKey = process.env['LOVABLE_API_KEY'];
+        const apiKey = process.env["LOVABLE_API_KEY"];
         if (!apiKey) return Response.json({ error: "ИИ не настроен" }, { status: 500 });
         const call = createResponsesCall(
           request,
@@ -61,7 +84,12 @@ export const Route = createFileRoute("/api/chat")({
           sendReasoning: true,
           onFinish: async ({ responseMessage }) => {
             const { error } = await sb.from("chat_messages").upsert(
-              { thread_id: threadId, user_id: u.user.id, message_id: responseMessage.id, message: responseMessage as unknown as Json },
+              {
+                thread_id: threadId,
+                user_id: u.user.id,
+                message_id: responseMessage.id,
+                message: responseMessage as unknown as Json,
+              },
               { onConflict: "thread_id,message_id" },
             );
             if (error) console.error("save assistant message", error);

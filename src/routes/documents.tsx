@@ -1,12 +1,265 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { useState } from 'react';
-import { FileText, ArrowLeft, ArrowRight, Download, Check, Wand2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { PageHeading } from '@/components/platform-shell';
-import { Field } from '@/components/crm-pages';
-import { usePlatform,routeHead } from '@/lib/platform';
-import { documentTypes,documentText,validBin,type DocumentFields } from '@/lib/documents';
-import { toast } from 'sonner';
-import font from '@/assets/fonts/notosans.asset.json';
-export const Route=createFileRoute('/documents')({head:()=>routeHead('Документы','Создание договоров, счетов и актов для предпринимателей Казахстана.'),component:Documents});
-function Documents(){const {records,save}=usePlatform();const company=records.find(r=>r.kind==='company');const [step,setStep]=useState(0);const [busy,setBusy]=useState(false);const [text,setText]=useState('');const [d,setD]=useState<DocumentFields>({type:documentTypes[0]??'Договор поставки',seller:String(company?.data.name||''),sellerBin:String(company?.data.bin||''),buyer:'',buyerBin:'',amount:'',subject:'',number:'1',date:new Date().toISOString().slice(0,10),terms:'Оплата в течение 5 рабочих дней. Доставка по согласованию сторон.',iban:String(company?.data.iban||'')});function update(n:string,v:string){setD({...d,[n]:v})}async function exportFile(format:string){setBusy(true);try{if(format==='docx'){const {Document,Packer,Paragraph,TextRun}=await import('docx');const doc=new Document({sections:[{children:text.split('\n').map(l=>new Paragraph({children:[new TextRun({text:l,font:'Arial',size:22})]}))}]});const blob=await Packer.toBlob(doc);download(blob,d.type+'.docx')}else{const {jsPDF}=await import('jspdf');const bytes=new Uint8Array(await (await fetch(font.url)).arrayBuffer());let binary='';for(let i=0;i<bytes.length;i++)binary+=String.fromCharCode(bytes[i]??0);const pdf=new jsPDF();pdf.addFileToVFS('NotoSans.ttf',btoa(binary));pdf.addFont('NotoSans.ttf','NotoSans','normal');pdf.setFont('NotoSans');pdf.setFontSize(11);let y=22;for(const line of pdf.splitTextToSize(text,170)){if(y>275){pdf.addPage();y=22;}pdf.text(line,20,y);y+=6;}pdf.save(d.type+'.pdf')}}catch(e){toast.error('Не удалось скачать документ: '+(e instanceof Error?e.message:''))}finally{setBusy(false)}}function download(blob:Blob,name:string){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href)}return <><PageHeading title="Документы" subtitle="Реквизиты, условия и готовый документ для вашего бизнеса"/><div className="flex gap-3 mb-7">{['Тип документа','Реквизиты','Предпросмотр'].map((s,i)=><span key={s} className={'flex gap-2 items-center text-xs '+(step===i?'text-primary font-bold':'text-muted-foreground')}><span className={'w-6 h-6 flex items-center justify-center rounded-full '+(step>=i?'bg-primary text-primary-foreground':'bg-muted')}>{step>i?<Check size={13}/>:i+1}</span>{s}{i<2&&<ArrowRight size={13} className="ml-3"/>}</span>)}</div>{step===0?<><div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">{documentTypes.map(t=><Button key={t} variant="outline" className={'h-32 flex-col whitespace-normal items-start p-5 text-left '+(d.type===t?'border-primary bg-primary/5':'')} onClick={()=>setD({...d,type:t})}><FileText className="text-primary mb-2"/><span className="font-bold">{t}</span></Button>)}</div><p className="text-xs text-muted-foreground mt-6 leading-6">Акт Р-1 регулируется <a className="text-primary underline" href="https://adilet.zan.kz/rus/docs/V1200008265" target="_blank" rel="noreferrer">приказом Минфина РК № 562</a>. Счёт на оплату не является электронной счёт-фактурой. Договоры и NDA не имеют единой обязательной формы; здесь создаётся редактируемый проект, требующий юридической проверки. Экспорт акта пока не воспроизводит официальную форму Р-1.</p><Button className="mt-6" onClick={()=>setStep(1)}>Продолжить <ArrowRight/></Button></>:step===1?<form className="max-w-4xl" onSubmit={e=>{e.preventDefault();if(!validBin(d.sellerBin)||!validBin(d.buyerBin)){toast.error('БИН / ИИН должен содержать 12 цифр');return;}setText(documentText(d));setStep(2)}}><div className="form-grid">{[['Ваша компания','seller'],['Ваш БИН / ИИН','sellerBin'],['Компания контрагента','buyer'],['БИН / ИИН контрагента','buyerBin'],['Сумма, ₸','amount'],['Номер документа','number'],['Дата','date'],['IBAN','iban']].map(([l,n])=><Field key={n} label={l??''} name={n??''} value={d[n as keyof DocumentFields]} onChange={update} type={n==='date'?'date':n==='amount'?'number':'text'} required={n!=='iban'}/>)}<label className="field">{d.type==='Соглашение о конфиденциальности'?'Какая информация является конфиденциальной?':'Товары, работы или услуги'}<textarea required value={d.subject} onChange={e=>update('subject',e.target.value)}/></label><label className="field">Условия и сроки<textarea required value={d.terms} onChange={e=>update('terms',e.target.value)}/></label></div><div className="flex gap-3 mt-6"><Button type="button" variant="outline" onClick={()=>setStep(0)}><ArrowLeft/> Назад</Button><Button>Сформировать документ <ArrowRight/></Button></div></form>:<><div className="flex gap-2 flex-wrap mb-5"><Button variant="outline" onClick={()=>setStep(1)}><ArrowLeft/> Редактировать реквизиты</Button><Button disabled={busy} onClick={()=>exportFile('pdf')}><Download/> Скачать PDF</Button><Button disabled={busy} variant="outline" onClick={()=>exportFile('docx')}><Download/> Скачать DOCX</Button><Button variant="outline" onClick={()=>save('document',{title:d.type,content:text,date:d.date})}>Сохранить в аккаунте</Button></div><textarea aria-label="Предпросмотр документа" className="doc-paper w-full max-w-4xl" value={text} onChange={e=>setText(e.target.value)}/></>}<h2 className="section-title mt-9 mb-4">Сохранённые документы</h2>{records.filter(r=>r.kind==='document').map(r=><div key={r.id} className="border-b border-border py-3 flex justify-between"><span>{String(r.data.title)} · {String(r.data.date)}</span><Button variant="link" onClick={()=>{setText(String(r.data.content));setStep(2)}}>Открыть</Button></div>)}</>}
+import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
+import { FileText, ArrowLeft, ArrowRight, Download, Check, Wand2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { PageHeading } from "@/components/platform-shell";
+import { Field } from "@/components/crm-pages";
+import { usePlatform, routeHead } from "@/lib/platform";
+import { documentTypes, documentText, validBin, type DocumentFields } from "@/lib/documents";
+import { toast } from "sonner";
+import font from "@/assets/fonts/notosans.asset.json";
+export const Route = createFileRoute("/documents")({
+  head: () =>
+    routeHead("Документы", "Создание договоров, счетов и актов для предпринимателей Казахстана."),
+  component: Documents,
+});
+function Documents() {
+  const { records, save } = usePlatform();
+  const company = records.find((r) => r.kind === "company");
+  const [step, setStep] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [text, setText] = useState("");
+  const [d, setD] = useState<DocumentFields>({
+    type: documentTypes[0] ?? "Договор поставки",
+    seller: String(company?.data.name || ""),
+    sellerBin: String(company?.data.bin || ""),
+    buyer: "",
+    buyerBin: "",
+    amount: "",
+    subject: "",
+    number: "1",
+    date: new Date().toISOString().slice(0, 10),
+    terms: "Оплата в течение 5 рабочих дней. Доставка по согласованию сторон.",
+    iban: String(company?.data.iban || ""),
+  });
+  function update(n: string, v: string) {
+    setD({ ...d, [n]: v });
+  }
+  async function exportFile(format: string) {
+    setBusy(true);
+    try {
+      if (format === "docx") {
+        const { Document, Packer, Paragraph, TextRun } = await import("docx");
+        const doc = new Document({
+          sections: [
+            {
+              children: text.split("\n").map(
+                (l) =>
+                  new Paragraph({
+                    children: [new TextRun({ text: l, font: "Arial", size: 22 })],
+                  }),
+              ),
+            },
+          ],
+        });
+        const blob = await Packer.toBlob(doc);
+        download(blob, d.type + ".docx");
+      } else {
+        const { jsPDF } = await import("jspdf");
+        const bytes = new Uint8Array(await (await fetch(font.url)).arrayBuffer());
+        let binary = "";
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i] ?? 0);
+        const pdf = new jsPDF();
+        pdf.addFileToVFS("NotoSans.ttf", btoa(binary));
+        pdf.addFont("NotoSans.ttf", "NotoSans", "normal");
+        pdf.setFont("NotoSans");
+        pdf.setFontSize(11);
+        let y = 22;
+        for (const line of pdf.splitTextToSize(text, 170)) {
+          if (y > 275) {
+            pdf.addPage();
+            y = 22;
+          }
+          pdf.text(line, 20, y);
+          y += 6;
+        }
+        pdf.save(d.type + ".pdf");
+      }
+    } catch (e) {
+      toast.error("Не удалось скачать документ: " + (e instanceof Error ? e.message : ""));
+    } finally {
+      setBusy(false);
+    }
+  }
+  function download(blob: Blob, name: string) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+  return (
+    <>
+      <PageHeading
+        title="Документы"
+        subtitle="Реквизиты, условия и готовый документ для вашего бизнеса"
+      />
+      <div className="flex gap-3 mb-7">
+        {["Тип документа", "Реквизиты", "Предпросмотр"].map((s, i) => (
+          <span
+            key={s}
+            className={
+              "flex gap-2 items-center text-xs " +
+              (step === i ? "text-primary font-bold" : "text-muted-foreground")
+            }
+          >
+            <span
+              className={
+                "w-6 h-6 flex items-center justify-center rounded-full " +
+                (step >= i ? "bg-primary text-primary-foreground" : "bg-muted")
+              }
+            >
+              {step > i ? <Check size={13} /> : i + 1}
+            </span>
+            {s}
+            {i < 2 && <ArrowRight size={13} className="ml-3" />}
+          </span>
+        ))}
+      </div>
+      {step === 0 ? (
+        <>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {documentTypes.map((t) => (
+              <Button
+                key={t}
+                variant="outline"
+                className={
+                  "h-32 flex-col whitespace-normal items-start p-5 text-left " +
+                  (d.type === t ? "border-primary bg-primary/5" : "")
+                }
+                onClick={() => setD({ ...d, type: t })}
+              >
+                <FileText className="text-primary mb-2" />
+                <span className="font-bold">{t}</span>
+              </Button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground mt-6 leading-6">
+            Акт Р-1 регулируется{" "}
+            <a
+              className="text-primary underline"
+              href="https://adilet.zan.kz/rus/docs/V1200008265"
+              target="_blank"
+              rel="noreferrer"
+            >
+              приказом Минфина РК № 562
+            </a>
+            . Счёт на оплату не является электронной счёт-фактурой. Договоры и NDA не имеют единой
+            обязательной формы; здесь создаётся редактируемый проект, требующий юридической
+            проверки. Экспорт акта пока не воспроизводит официальную форму Р-1.
+          </p>
+          <Button className="mt-6" onClick={() => setStep(1)}>
+            Продолжить <ArrowRight />
+          </Button>
+        </>
+      ) : step === 1 ? (
+        <form
+          className="max-w-4xl"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!validBin(d.sellerBin) || !validBin(d.buyerBin)) {
+              toast.error("БИН / ИИН должен содержать 12 цифр");
+              return;
+            }
+            setText(documentText(d));
+            setStep(2);
+          }}
+        >
+          <div className="form-grid">
+            {[
+              ["Ваша компания", "seller"],
+              ["Ваш БИН / ИИН", "sellerBin"],
+              ["Компания контрагента", "buyer"],
+              ["БИН / ИИН контрагента", "buyerBin"],
+              ["Сумма, ₸", "amount"],
+              ["Номер документа", "number"],
+              ["Дата", "date"],
+              ["IBAN", "iban"],
+            ].map(([l, n]) => (
+              <Field
+                key={n}
+                label={l ?? ""}
+                name={n ?? ""}
+                value={d[n as keyof DocumentFields]}
+                onChange={update}
+                type={n === "date" ? "date" : n === "amount" ? "number" : "text"}
+                required={n !== "iban"}
+              />
+            ))}
+            <label className="field">
+              {d.type === "Соглашение о конфиденциальности"
+                ? "Какая информация является конфиденциальной?"
+                : "Товары, работы или услуги"}
+              <textarea
+                required
+                value={d.subject}
+                onChange={(e) => update("subject", e.target.value)}
+              />
+            </label>
+            <label className="field">
+              Условия и сроки
+              <textarea
+                required
+                value={d.terms}
+                onChange={(e) => update("terms", e.target.value)}
+              />
+            </label>
+          </div>
+          <div className="flex gap-3 mt-6">
+            <Button type="button" variant="outline" onClick={() => setStep(0)}>
+              <ArrowLeft /> Назад
+            </Button>
+            <Button>
+              Сформировать документ <ArrowRight />
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <>
+          <div className="flex gap-2 flex-wrap mb-5">
+            <Button variant="outline" onClick={() => setStep(1)}>
+              <ArrowLeft /> Редактировать реквизиты
+            </Button>
+            <Button disabled={busy} onClick={() => exportFile("pdf")}>
+              <Download /> Скачать PDF
+            </Button>
+            <Button disabled={busy} variant="outline" onClick={() => exportFile("docx")}>
+              <Download /> Скачать DOCX
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => save("document", { title: d.type, content: text, date: d.date })}
+            >
+              Сохранить в аккаунте
+            </Button>
+          </div>
+          <textarea
+            aria-label="Предпросмотр документа"
+            className="doc-paper w-full max-w-4xl"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+          />
+        </>
+      )}
+      <h2 className="section-title mt-9 mb-4">Сохранённые документы</h2>
+      {records
+        .filter((r) => r.kind === "document")
+        .map((r) => (
+          <div key={r.id} className="border-b border-border py-3 flex justify-between">
+            <span>
+              {String(r.data.title)} · {String(r.data.date)}
+            </span>
+            <Button
+              variant="link"
+              onClick={() => {
+                setText(String(r.data.content));
+                setStep(2);
+              }}
+            >
+              Открыть
+            </Button>
+          </div>
+        ))}
+    </>
+  );
+}

@@ -1,16 +1,365 @@
-import { createFileRoute, Link } from '@tanstack/react-router';
-import { useEffect, useState } from 'react';
-import { Plus, Search, MapPin, ShoppingBag, MessageSquare, Store, SlidersHorizontal } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { PageHeading } from '@/components/platform-shell';
-import { Field } from '@/components/crm-pages';
-import { supabase } from '@/integrations/supabase/client';
-import { routeHead, money, usePlatform } from '@/lib/platform';
-import type { Database } from '@/integrations/supabase/types';
-import grain from '@/assets/grain.jpg';import bricks from '@/assets/bricks.jpg';
-import { toast } from 'sonner';
-export const Route=createFileRoute('/marketplace')({head:()=>routeHead('B2B-маркетплейс','Товары и услуги оптом от предпринимателей Тараза и Жамбылской области.'),component:Marketplace});
-type Product=Database['public']['Tables']['products']['Row'];
-const categories=['Все категории','Продукты питания','Строительство','Услуги','Оборудование'];
-export function Marketplace(){const {user,save}=usePlatform();const [products,setProducts]=useState<Product[]>([]);const [q,setQ]=useState('');const [category,setCategory]=useState('Все категории');const [location,setLocation]=useState('Все города');const [maxPrice,setMaxPrice]=useState('');const [discount,setDiscount]=useState(false);const [open,setOpen]=useState(false);const [selected,setSelected]=useState<Product|null>(null);const [qty,setQty]=useState(1);const [message,setMessage]=useState('');const [form,setForm]=useState({title:'',company:'',category:'Продукты питания',location:'Тараз',price:'',unit:'кг',min_quantity:'1',discount:'0',description:'',image_key:'grain'});async function refresh(){const {data,error}=await supabase.from('products').select('*').order('created_at',{ascending:false});if(error)toast.error('Не удалось загрузить каталог');else setProducts(data||[])}useEffect(()=>{void refresh()},[]);const shown=products.filter(p=>(p.title+' '+p.company).toLowerCase().includes(q.toLowerCase())&&(category==='Все категории'||p.category===category)&&(location==='Все города'||p.location===location)&&(!maxPrice||p.price<=Number(maxPrice))&&(!discount||p.discount>0));return <><PageHeading title="B2B-маркетплейс" subtitle="Прямые закупки у местных предпринимателей. Без посредников."><Button onClick={()=>setOpen(true)}><Plus/> Разместить товар</Button></PageHeading><div className="flex gap-3 flex-wrap mb-6"><div className="flex flex-1 min-w-52 gap-2 items-center border border-border rounded-md px-3 bg-card"><Search size={17} className="text-muted-foreground"/><input className="bg-transparent outline-none w-full py-3" placeholder="Товар, услуга или поставщик" aria-label="Поиск товаров" value={q} onChange={e=>setQ(e.target.value)}/></div><select className="select-control" value={category} onChange={e=>setCategory(e.target.value)}>{categories.map(c=><option key={c}>{c}</option>)}</select><select className="select-control" value={location} onChange={e=>setLocation(e.target.value)}>{['Все города','Тараз','Шу','Каратау','Жамбылская область'].map(c=><option key={c}>{c}</option>)}</select><input aria-label="Максимальная цена" type="number" min="0" className="select-control w-40" placeholder="Цена до, ₸" value={maxPrice} onChange={e=>setMaxPrice(e.target.value)}/><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={discount} onChange={e=>setDiscount(e.target.checked)}/> Со скидкой</label></div><div className="flex justify-between mb-4 text-xs text-muted-foreground"><span>{shown.length} предложений</span><span className="flex gap-1 items-center"><MapPin size={13}/> Жамбылская область</span></div><div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-5">{shown.map(p=><article className="panel overflow-hidden" key={p.id}><div className="relative"><img src={p.image_key==='bricks'?bricks:grain} alt={p.title} loading="lazy" width={1024} height={640} className="product-photo"/>{p.discount>0&&<span className="absolute top-3 left-3 tag tag-green">Оптовая скидка {p.discount}%</span>}</div><div className="p-5"><span className="text-muted-foreground text-[10px]">{p.category}</span><h2 className="font-bold text-base mt-1">{p.title}</h2><p className="text-muted-foreground text-xs mt-2 flex gap-1 items-center"><Store size={13}/>{p.company}</p><p className="text-muted-foreground text-[10px] mt-1 flex items-center gap-1"><MapPin size={12}/>{p.location}</p><div className="flex justify-between items-end mt-5"><div><strong className="text-xl">{money(p.price)}</strong><span className="text-muted-foreground text-xs"> / {p.unit}</span><p className="text-muted-foreground text-[10px] mt-1">от {p.min_quantity} {p.unit}</p></div><Button size="sm" onClick={()=>{setSelected(p);setQty(p.min_quantity)}}>Подробнее <ShoppingBag/></Button></div></div></article>)}</div>{!shown.length&&<div className="text-center py-16 text-muted-foreground">Предложений не найдено</div>}<Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-h-[90dvh] overflow-auto max-w-2xl"><DialogHeader><DialogTitle>Разместить товар или услугу</DialogTitle></DialogHeader><form onSubmit={async e=>{e.preventDefault();if(!user){toast.error('Войдите в аккаунт для публикации');return;}const {error}=await supabase.from('products').insert({...form,user_id:user.id,price:Number(form.price),min_quantity:Number(form.min_quantity),discount:Number(form.discount)});if(error)toast.error(error.message);else{toast.success('Товар опубликован');setOpen(false);refresh()}}}><div className="form-grid">{([['Название','title'],['Компания','company'],['Город','location'],['Цена, ₸','price'],['Единица','unit'],['Минимальный заказ','min_quantity'],['Скидка, %','discount']] as const).map(([l,n])=><Field key={n} label={l} name={n} value={form[n as keyof typeof form]} type={['price','discount','min_quantity'].includes(n)?'number':'text'} required onChange={(n,v)=>setForm({...form,[n]:v})}/>)}<label className="field">Категория<select value={form.category} onChange={e=>setForm({...form,category:e.target.value})}>{categories.slice(1).map(c=><option key={c}>{c}</option>)}</select></label><label className="field">Фото категории<select value={form.image_key} onChange={e=>setForm({...form,image_key:e.target.value})}><option value="grain">Зерно и продукты</option><option value="bricks">Строительные материалы</option></select></label></div><label className="field mt-4">Описание<textarea value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/></label><Button className="mt-5 w-full">Опубликовать</Button></form></DialogContent></Dialog><Dialog open={!!selected} onOpenChange={v=>!v&&setSelected(null)}><DialogContent><DialogHeader><DialogTitle>{selected?.title}</DialogTitle></DialogHeader>{selected&&<><p className="text-muted-foreground">{selected.company} · {selected.location}</p><p>{selected.description}</p><strong className="text-xl">{money(selected.price)} / {selected.unit}</strong><Field label="Количество" name="qty" type="number" value={qty} onChange={(_,v)=>setQty(Number(v))}/><p className="text-muted-foreground">Итого: {money(selected.price*qty*(qty>=selected.min_quantity?1-selected.discount/100:1))}</p><Button onClick={async()=>{if(qty<selected.min_quantity){toast.error('Минимальный заказ: '+selected.min_quantity);return;}if(await save('order',{title:selected.title,product_id:selected.id,seller_id:selected.user_id||'',quantity:qty,amount:selected.price*qty*(1-selected.discount/100),status:'Новый',company:selected.company}))setSelected(null)}}><ShoppingBag/> Оформить заказ</Button><label className="field">Сообщение поставщику<textarea value={message} onChange={e=>setMessage(e.target.value)}/></label><Button variant="outline" disabled={!message.trim()} onClick={async()=>{if(!user){toast.error('Войдите в аккаунт');return;}if(!selected.user_id){toast.info('Это демонстрационный поставщик — отправка недоступна');return;}const {error}=await supabase.from('b2b_messages').insert({sender_id:user.id,receiver_id:selected.user_id,product_id:selected.id,body:message});if(error)toast.error(error.message);else{toast.success('Сообщение отправлено');setMessage('')}}}><MessageSquare/> Отправить сообщение</Button></>}</DialogContent></Dialog><p className="mt-6 text-[10px] text-muted-foreground">Предложения без аккаунта поставщика — демонстрационные примеры, а не реальные объявления.</p></>}
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import {
+  Plus,
+  Search,
+  MapPin,
+  ShoppingBag,
+  MessageSquare,
+  Store,
+  SlidersHorizontal,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { PageHeading } from "@/components/platform-shell";
+import { Field } from "@/components/crm-pages";
+import { supabase } from "@/integrations/supabase/client";
+import { routeHead, money, usePlatform } from "@/lib/platform";
+import type { Database } from "@/integrations/supabase/types";
+import grain from "@/assets/grain.jpg";
+import bricks from "@/assets/bricks.jpg";
+import { toast } from "sonner";
+export const Route = createFileRoute("/marketplace")({
+  head: () =>
+    routeHead(
+      "B2B-маркетплейс",
+      "Товары и услуги оптом от предпринимателей Тараза и Жамбылской области.",
+    ),
+  component: Marketplace,
+});
+type Product = Database["public"]["Tables"]["products"]["Row"];
+const categories = ["Все категории", "Продукты питания", "Строительство", "Услуги", "Оборудование"];
+export function Marketplace() {
+  const { user, save } = usePlatform();
+  const [products, setProducts] = useState<Product[]>([]);
+  const [q, setQ] = useState("");
+  const [category, setCategory] = useState("Все категории");
+  const [location, setLocation] = useState("Все города");
+  const [maxPrice, setMaxPrice] = useState("");
+  const [discount, setDiscount] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<Product | null>(null);
+  const [qty, setQty] = useState(1);
+  const [message, setMessage] = useState("");
+  const [form, setForm] = useState({
+    title: "",
+    company: "",
+    category: "Продукты питания",
+    location: "Тараз",
+    price: "",
+    unit: "кг",
+    min_quantity: "1",
+    discount: "0",
+    description: "",
+    image_key: "grain",
+  });
+  async function refresh() {
+    const { data, error } = await supabase
+      .from("products")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) toast.error("Не удалось загрузить каталог");
+    else setProducts(data || []);
+  }
+  useEffect(() => {
+    void refresh();
+  }, []);
+  const shown = products.filter(
+    (p) =>
+      (p.title + " " + p.company).toLowerCase().includes(q.toLowerCase()) &&
+      (category === "Все категории" || p.category === category) &&
+      (location === "Все города" || p.location === location) &&
+      (!maxPrice || p.price <= Number(maxPrice)) &&
+      (!discount || p.discount > 0),
+  );
+  return (
+    <>
+      <PageHeading
+        title="B2B-маркетплейс"
+        subtitle="Прямые закупки у местных предпринимателей. Без посредников."
+      >
+        <Button onClick={() => setOpen(true)}>
+          <Plus /> Разместить товар
+        </Button>
+      </PageHeading>
+      <div className="flex gap-3 flex-wrap mb-6">
+        <div className="flex flex-1 min-w-52 gap-2 items-center border border-border rounded-md px-3 bg-card">
+          <Search size={17} className="text-muted-foreground" />
+          <input
+            className="bg-transparent outline-none w-full py-3"
+            placeholder="Товар, услуга или поставщик"
+            aria-label="Поиск товаров"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+        </div>
+        <select
+          className="select-control"
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+        >
+          {categories.map((c) => (
+            <option key={c}>{c}</option>
+          ))}
+        </select>
+        <select
+          className="select-control"
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+        >
+          {["Все города", "Тараз", "Шу", "Каратау", "Жамбылская область"].map((c) => (
+            <option key={c}>{c}</option>
+          ))}
+        </select>
+        <input
+          aria-label="Максимальная цена"
+          type="number"
+          min="0"
+          className="select-control w-40"
+          placeholder="Цена до, ₸"
+          value={maxPrice}
+          onChange={(e) => setMaxPrice(e.target.value)}
+        />
+        <label className="flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={discount}
+            onChange={(e) => setDiscount(e.target.checked)}
+          />{" "}
+          Со скидкой
+        </label>
+      </div>
+      <div className="flex justify-between mb-4 text-xs text-muted-foreground">
+        <span>{shown.length} предложений</span>
+        <span className="flex gap-1 items-center">
+          <MapPin size={13} /> Жамбылская область
+        </span>
+      </div>
+      <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-5">
+        {shown.map((p) => (
+          <article className="panel overflow-hidden" key={p.id}>
+            <div className="relative">
+              <img
+                src={p.image_key === "bricks" ? bricks : grain}
+                alt={p.title}
+                loading="lazy"
+                width={1024}
+                height={640}
+                className="product-photo"
+              />
+              {p.discount > 0 && (
+                <span className="absolute top-3 left-3 tag tag-green">
+                  Оптовая скидка {p.discount}%
+                </span>
+              )}
+            </div>
+            <div className="p-5">
+              <span className="text-muted-foreground text-[10px]">{p.category}</span>
+              <h2 className="font-bold text-base mt-1">{p.title}</h2>
+              <p className="text-muted-foreground text-xs mt-2 flex gap-1 items-center">
+                <Store size={13} />
+                {p.company}
+              </p>
+              <p className="text-muted-foreground text-[10px] mt-1 flex items-center gap-1">
+                <MapPin size={12} />
+                {p.location}
+              </p>
+              <div className="flex justify-between items-end mt-5">
+                <div>
+                  <strong className="text-xl">{money(p.price)}</strong>
+                  <span className="text-muted-foreground text-xs"> / {p.unit}</span>
+                  <p className="text-muted-foreground text-[10px] mt-1">
+                    от {p.min_quantity} {p.unit}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setSelected(p);
+                    setQty(p.min_quantity);
+                  }}
+                >
+                  Подробнее <ShoppingBag />
+                </Button>
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+      {!shown.length && (
+        <div className="text-center py-16 text-muted-foreground">Предложений не найдено</div>
+      )}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-h-[90dvh] overflow-auto max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Разместить товар или услугу</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!user) {
+                toast.error("Войдите в аккаунт для публикации");
+                return;
+              }
+              const { error } = await supabase.from("products").insert({
+                ...form,
+                user_id: user.id,
+                price: Number(form.price),
+                min_quantity: Number(form.min_quantity),
+                discount: Number(form.discount),
+              });
+              if (error) toast.error(error.message);
+              else {
+                toast.success("Товар опубликован");
+                setOpen(false);
+                refresh();
+              }
+            }}
+          >
+            <div className="form-grid">
+              {(
+                [
+                  ["Название", "title"],
+                  ["Компания", "company"],
+                  ["Город", "location"],
+                  ["Цена, ₸", "price"],
+                  ["Единица", "unit"],
+                  ["Минимальный заказ", "min_quantity"],
+                  ["Скидка, %", "discount"],
+                ] as const
+              ).map(([l, n]) => (
+                <Field
+                  key={n}
+                  label={l}
+                  name={n}
+                  value={form[n as keyof typeof form]}
+                  type={["price", "discount", "min_quantity"].includes(n) ? "number" : "text"}
+                  required
+                  onChange={(n, v) => setForm({ ...form, [n]: v })}
+                />
+              ))}
+              <label className="field">
+                Категория
+                <select
+                  value={form.category}
+                  onChange={(e) => setForm({ ...form, category: e.target.value })}
+                >
+                  {categories.slice(1).map((c) => (
+                    <option key={c}>{c}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                Фото категории
+                <select
+                  value={form.image_key}
+                  onChange={(e) => setForm({ ...form, image_key: e.target.value })}
+                >
+                  <option value="grain">Зерно и продукты</option>
+                  <option value="bricks">Строительные материалы</option>
+                </select>
+              </label>
+            </div>
+            <label className="field mt-4">
+              Описание
+              <textarea
+                value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+              />
+            </label>
+            <Button className="mt-5 w-full">Опубликовать</Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!selected} onOpenChange={(v) => !v && setSelected(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{selected?.title}</DialogTitle>
+          </DialogHeader>
+          {selected && (
+            <>
+              <p className="text-muted-foreground">
+                {selected.company} · {selected.location}
+              </p>
+              <p>{selected.description}</p>
+              <strong className="text-xl">
+                {money(selected.price)} / {selected.unit}
+              </strong>
+              <Field
+                label="Количество"
+                name="qty"
+                type="number"
+                value={qty}
+                onChange={(_, v) => setQty(Number(v))}
+              />
+              <p className="text-muted-foreground">
+                Итого:{" "}
+                {money(
+                  selected.price *
+                    qty *
+                    (qty >= selected.min_quantity ? 1 - selected.discount / 100 : 1),
+                )}
+              </p>
+              <Button
+                onClick={async () => {
+                  if (qty < selected.min_quantity) {
+                    toast.error("Минимальный заказ: " + selected.min_quantity);
+                    return;
+                  }
+                  if (
+                    await save("order", {
+                      title: selected.title,
+                      product_id: selected.id,
+                      seller_id: selected.user_id || "",
+                      quantity: qty,
+                      amount: selected.price * qty * (1 - selected.discount / 100),
+                      status: "Новый",
+                      company: selected.company,
+                    })
+                  )
+                    setSelected(null);
+                }}
+              >
+                <ShoppingBag /> Оформить заказ
+              </Button>
+              <label className="field">
+                Сообщение поставщику
+                <textarea value={message} onChange={(e) => setMessage(e.target.value)} />
+              </label>
+              <Button
+                variant="outline"
+                disabled={!message.trim()}
+                onClick={async () => {
+                  if (!user) {
+                    toast.error("Войдите в аккаунт");
+                    return;
+                  }
+                  if (!selected.user_id) {
+                    toast.info("Это демонстрационный поставщик — отправка недоступна");
+                    return;
+                  }
+                  const { error } = await supabase.from("b2b_messages").insert({
+                    sender_id: user.id,
+                    receiver_id: selected.user_id,
+                    product_id: selected.id,
+                    body: message,
+                  });
+                  if (error) toast.error(error.message);
+                  else {
+                    toast.success("Сообщение отправлено");
+                    setMessage("");
+                  }
+                }}
+              >
+                <MessageSquare /> Отправить сообщение
+              </Button>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+      <p className="mt-6 text-[10px] text-muted-foreground">
+        Предложения без аккаунта поставщика — демонстрационные примеры, а не реальные объявления.
+      </p>
+    </>
+  );
+}
