@@ -44,7 +44,7 @@ Qadam — веб-платформа для управления бизнес-п�
 
    ```bash
    git clone https://github.com/smoqalik23/QadamProject
-   cd <ПАПКА-ПРОЕКТА>
+   cd QadamProject
    ```
 
 2. Установите зависимости:
